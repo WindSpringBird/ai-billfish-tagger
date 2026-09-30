@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>本地视觉助手</title>
+  <style>
+    :root {
+      --bg: #111318;
+      --panel: #1a1d25;
+      --line: #2c3140;
+      --text: #eceef4;
+      --muted: #9aa3b5;
+      --accent: #7aa2ff;
+      --user: #2a3348;
+      --bot: #22262f;
+      --danger: #f07178;
+      --ok: #86d9a2;
+      --warn: #e6c07b;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font: 15px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .app {
+      max-width: 1080px;
+      height: 100%;
+      margin: 0 auto;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+    }
+    .app.batch-mode { grid-template-rows: auto auto 1fr; }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 18px 8px;
+    }
+    header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+    .modes {
+      display: flex;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .modes button {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    .modes button.on { background: #2d3954; color: var(--text); }
+    .model-bar {
+      margin: 0 18px 10px;
+      padding: 12px 14px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+    .model-name {
+      font-size: 13px;
+      font-weight: 650;
+      word-break: break-all;
+    }
+    .specs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .specs b { color: var(--text); font-weight: 600; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--muted);
+    }
+    .dot.ready { background: var(--ok); }
+    .dot.loading, .dot.stopping { background: var(--warn); }
+    .dot.error { background: var(--danger); }
+    .controls { display: flex; gap: 8px; }
+    .controls button, .btn {
+      height: 36px;
+      padding: 0 14px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      cursor: pointer;
+      font-weight: 650;
+      font: inherit;
+    }
+    #startBtn, .btn.primary { background: var(--accent); color: #0e1220; border-color: transparent; }
+    #stopBtn, .btn.ghost { background: transparent; color: var(--text); }
+    .btn.danger { background: transparent; color: var(--danger); border-color: #5a3038; }
+    button:disabled, .btn:disabled { opacity: .4; cursor: not-allowed; }
+    #log {
+      overflow: auto;
+      padding: 8px 18px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .msg {
+      max-width: 78%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .msg.user { align-self: flex-end; background: var(--user); }
+    .msg.bot { align-self: flex-start; background: var(--bot); border: 1px solid var(--line); }
+    .msg.hint { align-self: center; color: var(--muted); background: transparent; font-size: 13px; }
+    .composer {
+      border-top: 1px solid var(--line);
+      padding: 12px 18px 16px;
+      background: #14171e;
+    }
+    .preview {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .preview.on { display: flex; }
+    .preview img {
+      width: 72px; height: 72px; object-fit: cover;
+      border-radius: 8px; border: 1px solid var(--line);
+    }
+    .preview .meta { color: var(--muted); font-size: 12px; }
+    .row {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 8px;
+      align-items: end;
+    }
+    textarea, input[type="text"], input[type="number"] {
+      width: 100%;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--text);
+      padding: 10px 12px;
+      font: inherit;
+    }
+    textarea {
+      min-height: 48px;
+      max-height: 160px;
+      resize: none;
+    }
+    button.icon, button.send {
+      height: 40px;
+      border: 0;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    button.icon {
+      width: 40px;
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--line);
+    }
+    button.send {
+      padding: 0 14px;
+      background: var(--accent);
+      color: #0e1220;
+      font-weight: 650;
+    }
+    .drop { outline: 2px dashed transparent; }
+    .drop.active { outline-color: var(--accent); background: #182033; }
+    .hidden { display: none !important; }
+    #batchPane {
+      overflow: auto;
+      padding: 0 18px 24px;
+      display: none;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .app.batch-mode #batchPane { display: flex; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .card h2 {
+      margin: 0 0 10px;
+      font-size: 14px;
+      font-weight: 650;
+    }
+    .field { margin-bottom: 10px; }
+    .field label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .path-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    .hint { color: var(--muted); font-size: 12px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip, .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: #242834;
+      border: 1px solid var(--line);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .tag button {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+    .opts { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: 8px 0; }
+    .opts label { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 13px; }
+    .opts input[type="number"] { width: 88px; padding: 6px 8px; }
+    .progress-track {
+      height: 8px;
+      background: #242834;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .progress-bar { height: 100%; width: 0; background: var(--accent); }
+    .group { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 10px; }
+    .group:first-child { border-top: 0; padding-top: 0; margin-top: 0; }
+    .group-h { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .group-h input { padding: 6px 10px; border-radius: 8px; }
+    .add-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 8px; }
+    .add-row input, .add-row button { height: 34px; }
+    .child { margin: 10px 0 0 14px; padding: 10px; border: 1px dashed var(--line); border-radius: 10px; }
+    .vocab-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+    .batch-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 14px;
+      align-items: stretch;
+    }
+    @media (max-width: 860px) {
+      .batch-grid { grid-template-columns: 1fr; }
+    }
+    .log-card {
+      display: flex;
+      flex-direction: column;
+      min-height: 320px;
+    }
+    .log-card h2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .live-tag {
+      font-size: 11px;
+      font-weight: 650;
+      color: var(--ok);
+      display: none;
+    }
+    .live-tag.on { display: inline; }
+    .batch-log {
+      flex: 1;
+      min-height: 240px;
+      max-height: 420px;
+      overflow: auto;
+      padding: 10px 12px;
+      background: #12151c;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--text);
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .batch-log.live { border-color: var(--accent); }
+    .batch-log.empty { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="app drop" id="drop">
+    <header>
+      <h1>本地视觉助手</h1>
+      <div class="modes">
+        <button id="modeChat" class="on">聊天</button>
+        <button id="modeTag">单张打标</button>
+        <button id="modeBatch">批量打标</button>
+      </div>
+    </header>
+    <section class="model-bar">
+      <div>
+        <div class="model-name" id="modelName">—</div>
+        <div class="specs">
+          <span class="pill"><span class="dot" id="dot"></span><b id="stateLabel">未启动</b></span>
+          <span>量化 <b id="quant">—</b></span>
+          <span>引擎 <b id="engine">—</b></span>
+          <span>磁盘 <b id="disk">—</b></span>
+          <span>峰值内存 <b id="peak">—</b></span>
+          <span>加载耗时 <b id="loadS">—</b></span>
+          <span>词表 <b id="leafCount">—</b></span>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="startBtn" type="button">启动模型</button>
+        <button id="stopBtn" type="button">停止模型</button>
+      </div>
+    </section>
+    <div id="log">
+      <div class="msg hint">先点「启动模型」，再拖图、粘贴或点回形针。图只留在这台电脑。批量打标请切到「批量打标」页。</div>
+    </div>
+    <div id="batchPane">
+      <div class="batch-grid">
+      <section class="card">
+        <h2>素材目录</h2>
+        <div class="field">
+          <label>图片文件夹（本机绝对路径，不改原图）</label>
+          <div class="path-row">
+            <input id="folderInput" type="text" placeholder="/Volumes/…/图库003" />
+            <button class="btn ghost" id="scanBtn" type="button">扫描</button>
+          </div>
+        </div>
+        <div class="chips" id="folderSuggest"></div>
+        <div class="hint" id="scanHint">填写目录后点扫描，统计图片数量。</div>
+        <div class="field" style="margin-top:10px">
+          <label>结果输出目录（jsonl / sidecar，可写到 Mac 磁盘）</label>
+          <input id="outInput" type="text" />
+        </div>
+        <div class="opts">
+          <label><input id="resumeInput" type="checkbox" checked /> 断点续跑</label>
+          <label>最多张数 <input id="limitInput" type="number" min="0" step="1" value="0" /> 0 表示全部</label>
+        </div>
+        <div class="vocab-actions">
+          <button class="btn primary" id="batchStart" type="button">开始批量打标</button>
+          <button class="btn danger" id="batchStop" type="button">停止批次</button>
+        </div>
+        <div class="hint" id="batchHint" style="margin-top:8px">未启动模型时点开始，会先自动加载模型。</div>
+        <div class="progress-track" style="margin-top:10px"><div class="progress-bar" id="progBar"></div></div>
+        <div class="hint" id="progText" style="margin-top:6px">就绪</div>
+      </section>
+      <section class="card log-card">
+        <h2>运行日志 <span class="live-tag" id="logLive">实时</span></h2>
+        <div class="batch-log empty" id="batchLog">点「开始批量打标」后，这里会逐条显示加载模型和每张图的结果。</div>
+      </section>
+      </div>
+      <section class="card">
+        <h2>导入 Billfish</h2>
+        <p class="hint">先关掉 Billfish，再预览匹配情况，确认后才写入。写入前会自动备份 billfish.db。Windows 上也可以只拷这两个 py：<code>import_billfish.py</code> + <code>billfish_vocab.py</code> + <code>vocab_store.py</code>。</p>
+        <div class="field">
+          <label>Billfish 数据库（素材库\.bf\billfish.db）</label>
+          <div class="path-row">
+            <input id="dbInput" type="text" placeholder="D:\图库\.bf\billfish.db  或  /Volumes/…/.bf/billfish.db" />
+            <button class="btn ghost" id="dbSuggestBtn" type="button">查找</button>
+          </div>
+        </div>
+        <div class="chips" id="dbSuggest"></div>
+        <div class="opts">
+          <label><input id="createMissingInput" type="checkbox" checked /> 库里没有的标签就新建</label>
+          <label><input id="replaceInput" type="checkbox" checked /> 覆盖这批图上的旧词表标签</label>
+          <label><input id="stripOldInput" type="checkbox" /> 剥掉旧的媒介/分级树</label>
+        </div>
+        <div class="vocab-actions">
+          <button class="btn ghost" id="exportCsv" type="button">导出 CSV</button>
+          <button class="btn ghost" id="billfishPreview" type="button">预览导入</button>
+          <button class="btn primary" id="billfishApply" type="button">写入库</button>
+        </div>
+        <div class="hint" id="billfishHint" style="margin-top:8px">预览不会改数据库。写入请先退出 Billfish。</div>
+        <div class="batch-log empty" id="billfishLog" style="min-height:140px;max-height:260px;margin-top:10px">预览或写入后，这里显示匹配数量和日志。</div>
+      </section>
+      <section class="card">
+        <h2>标签词表 <span class="hint" id="vocabMeta"></span></h2>
+        <p class="hint">叶子标签会写进提示词。分类名不会打到图上。每张图仍限制 1～4 个标签。</p>
+        <div id="vocabEditor"></div>
+        <div class="vocab-actions">
+          <button class="btn ghost" id="addGroup" type="button">添加分类</button>
+          <button class="btn primary" id="saveVocab" type="button">保存词表</button>
+          <button class="btn ghost" id="resetVocab" type="button">恢复默认</button>
+        </div>
+        <div class="hint" id="vocabHint"></div>
+      </section>
+    </div>
+    <div class="composer" id="composer">
+      <div class="preview" id="preview">
+        <img id="thumb" alt="预览" />
+        <div class="meta">
+          <div id="imgName">已选图片</div>
+          <div>换图会新开一轮对话</div>
+        </div>
+        <button class="icon" id="clearImg" type="button" title="去掉图片">×</button>
+      </div>
+      <div class="row">
+        <button class="icon" id="pick" type="button" title="选择图片">📎</button>
+        <textarea id="input" placeholder="问这张图…  Enter 发送，Shift+Enter 换行"></textarea>
+        <button class="send" id="send" type="button">发送</button>
+      </div>
+      <input id="file" type="file" accept="image/*" hidden />
+    </div>
+  </div>
+  <script>
+    const log = document.getElementById("log");
+    const input = document.getElementById("input");
+    const sendBtn = document.getElementById("send");
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const preview = document.getElementById("preview");
+    const thumb = document.getElementById("thumb");
+    const imgName = document.getElementById("imgName");
+    const drop = document.getElementById("drop");
+    const batchPane = document.getElementById("batchPane");
+    const composer = document.getElementById("composer");
+    let mode = "chat";
+    let imageB64 = null;
+    let history = [];
+    let busy = false;
+    let lastStatus = "";
+    let lastBatch = "idle";
+    let groups = [];
+    let vocabDirty = false;
+
+    const STATE_TEXT = {
+      stopped: "未启动",
+      loading: "启动中",
+      ready: "运行中",
+      stopping: "停止中",
+      error: "出错",
+    };
+
+    function add(role, text) {
+      const el = document.createElement("div");
+      el.className = "msg " + role;
+      el.textContent = text;
+      log.appendChild(el);
+      log.scrollTop = log.scrollHeight;
+      return el;
+    }
+
+    function setMode(next) {
+      mode = next;
+      document.getElementById("modeChat").classList.toggle("on", next === "chat");
+      document.getElementById("modeTag").classList.toggle("on", next === "tag");
+      document.getElementById("modeBatch").classList.toggle("on", next === "batch");
+      const batch = next === "batch";
+      drop.classList.toggle("batch-mode", batch);
+      log.classList.toggle("hidden", batch);
+      composer.classList.toggle("hidden", batch);
+      input.placeholder = next === "tag" ? "直接点发送即可打标，或补充一句" : "问这张图…  Enter 发送，Shift+Enter 换行";
+      if (batch) {
+        const box = document.getElementById("batchLog");
+        requestAnimationFrame(() => box.scrollTop = box.scrollHeight);
+      }
+    }
+    document.getElementById("modeChat").onclick = () => setMode("chat");
+    document.getElementById("modeTag").onclick = () => setMode("tag");
+    document.getElementById("modeBatch").onclick = () => setMode("batch");
+
+    function renderStatus(s) {
+      lastStatus = s.status || "stopped";
+      document.getElementById("modelName").textContent = s.model_id || "—";
+      document.getElementById("quant").textContent = s.quant || "—";
+      document.getElementById("engine").textContent = s.engine || "—";
+      document.getElementById("disk").textContent = s.disk_gb != null ? s.disk_gb + " GB" : "未缓存";
+      document.getElementById("peak").textContent = s.mlx_peak_gb != null ? s.mlx_peak_gb + " GB" : "—";
+      document.getElementById("loadS").textContent = s.load_s != null ? s.load_s + " 秒" : "—";
+      document.getElementById("leafCount").textContent = s.leaf_count != null ? s.leaf_count + " 个" : "—";
+      document.getElementById("stateLabel").textContent =
+        lastStatus === "error" && s.error ? ("出错：" + s.error) : (STATE_TEXT[lastStatus] || lastStatus);
+      const dot = document.getElementById("dot");
+      dot.className = "dot " + lastStatus;
+      const batchRun = !!(s.batch && s.batch.running);
+      startBtn.disabled = lastStatus === "ready" || lastStatus === "loading" || lastStatus === "stopping";
+      stopBtn.disabled = lastStatus === "stopped" || lastStatus === "loading" || lastStatus === "stopping" || batchRun;
+      sendBtn.disabled = busy || lastStatus !== "ready" || batchRun;
+      if (s.batch) renderBatch(s.batch);
+    }
+
+    function renderBatch(b) {
+      lastBatch = b.status || "idle";
+      const total = b.total || 0;
+      const done = b.done || 0;
+      const pct = total ? Math.min(100, Math.round(done * 100 / total)) : 0;
+      document.getElementById("progBar").style.width = pct + "%";
+      const bits = [];
+      bits.push(b.status === "running" ? "打标中" : (b.status === "stopping" ? "正在停止" : (b.status === "done" ? "已完成" : (b.status === "error" ? "出错" : "就绪"))));
+      if (total) bits.push(done + " / " + total);
+      if (b.skipped) bits.push("续跑跳过 " + b.skipped);
+      if (b.last) bits.push((b.last.file || "") + " " + (b.last.status || "") + " " + ((b.last.tags || []).join("、") || "[]"));
+      if (b.error) bits.push(b.error);
+      document.getElementById("progText").textContent = bits.join(" · ");
+      const box = document.getElementById("batchLog");
+      const lines = b.log || [];
+      const nearBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 48;
+      if (lines.length) {
+        box.textContent = lines.join("\n");
+        box.classList.remove("empty");
+      } else if (!box.dataset.local) {
+        box.textContent = "点「开始批量打标」后，这里会逐条显示加载模型和每张图的结果。";
+        box.classList.add("empty");
+      }
+      if (nearBottom || b.running) box.scrollTop = box.scrollHeight;
+      box.classList.toggle("live", !!b.running);
+      document.getElementById("logLive").classList.toggle("on", !!b.running);
+      document.getElementById("batchStart").disabled = b.running;
+      document.getElementById("batchStop").disabled = !b.running;
+    }
+
+    async function pollStatus() {
+      try {
+        const s = await (await fetch("/api/status")).json();
+        renderStatus(s);
+      } catch {
+        renderStatus({ status: "error", error: "网页服务未启动", model_id: "—" });
+      }
+      const wait = (lastStatus === "loading" || lastStatus === "stopping" || lastBatch === "running" || lastBatch === "stopping") ? 400 : 2000;
+      setTimeout(pollStatus, wait);
+    }
+    pollStatus();
+
+    startBtn.onclick = async () => {
+      startBtn.disabled = true;
+      add("hint", "正在启动模型…");
+      const res = await fetch("/api/model/start", { method: "POST" });
+      renderStatus(await res.json());
+    };
+    stopBtn.onclick = async () => {
+      stopBtn.disabled = true;
+      add("hint", "正在停止模型，释放内存…");
+      const res = await fetch("/api/model/stop", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        add("hint", data.detail || "无法停止模型");
+        return;
+      }
+      renderStatus(data);
+      add("hint", "模型已停止。");
+    };
+
+    function setImage(file) {
+      if (mode === "batch") return;
+      if (!file || !file.type.startsWith("image/")) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        imageB64 = reader.result;
+        thumb.src = imageB64;
+        imgName.textContent = file.name || "粘贴的图片";
+        preview.classList.add("on");
+        history = [];
+        add("hint", "已换图，新开一轮。");
+      };
+      reader.readAsDataURL(file);
+    }
+
+    document.getElementById("pick").onclick = () => document.getElementById("file").click();
+    document.getElementById("file").onchange = (e) => setImage(e.target.files[0]);
+    document.getElementById("clearImg").onclick = () => {
+      imageB64 = null;
+      preview.classList.remove("on");
+    };
+
+    ;["dragenter", "dragover"].forEach((ev) => {
+      drop.addEventListener(ev, (e) => { e.preventDefault(); if (mode !== "batch") drop.classList.add("active"); });
+    });
+    ;["dragleave", "drop"].forEach((ev) => {
+      drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("active"); });
+    });
+    drop.addEventListener("drop", (e) => setImage(e.dataTransfer.files[0]));
+    window.addEventListener("paste", (e) => {
+      const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith("image/"));
+      if (item) setImage(item.getAsFile());
+    });
+
+    async function send() {
+      if (busy || mode === "batch") return;
+      if (lastStatus !== "ready") { add("hint", "请先启动模型。"); return; }
+      const text = input.value.trim();
+      if (!imageB64) { add("hint", "先放一张图片。"); return; }
+      if (!text && mode !== "tag") return;
+      busy = true;
+      sendBtn.disabled = true;
+      const shown = text || (mode === "tag" ? "给这张图打标签" : "描述这张图");
+      add("user", shown);
+      input.value = "";
+      const bot = add("bot", "");
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode, message: text, image_b64: imageB64, history }),
+        });
+        if (!res.ok) {
+          bot.textContent = await res.text();
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let full = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const parts = buf.split("\n\n");
+          buf = parts.pop();
+          for (const part of parts) {
+            const line = part.replace(/^data:\s*/, "");
+            if (!line) continue;
+            const data = JSON.parse(line);
+            if (data.t) {
+              full += data.t;
+              bot.textContent = full;
+              log.scrollTop = log.scrollHeight;
+            }
+          }
+        }
+        history.push({ role: "user", content: shown });
+        history.push({ role: "assistant", content: full });
+      } catch (err) {
+        bot.textContent = "出错了：" + err;
+      } finally {
+        busy = false;
+        sendBtn.disabled = lastStatus !== "ready";
+        input.focus();
+      }
+    }
+
+    sendBtn.onclick = send;
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    });
+
+    function batchBody() {
+      return {
+        folder: document.getElementById("folderInput").value.trim(),
+        out: document.getElementById("outInput").value.trim(),
+        resume: document.getElementById("resumeInput").checked,
+        limit: Number(document.getElementById("limitInput").value || 0),
+      };
+    }
+
+    async function readError(res) {
+      try {
+        const data = await res.json();
+        return data.detail || JSON.stringify(data);
+      } catch {
+        return await res.text();
+      }
+    }
+
+    async function scanFolder() {
+      const hint = document.getElementById("scanHint");
+      hint.textContent = "正在扫描…";
+      const res = await fetch("/api/folder/scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(batchBody()),
+      });
+      if (!res.ok) {
+        hint.textContent = await readError(res);
+        return;
+      }
+      const data = await res.json();
+      document.getElementById("folderInput").value = data.folder;
+      document.getElementById("outInput").value = data.out;
+      const sample = (data.samples || []).slice(0, 3).join("、");
+      hint.textContent = `找到 ${data.n_images} 张图片，续跑已完成 ${data.n_done}，待打 ${data.n_todo}` + (sample ? `。例如：${sample}` : "");
+      const box = document.getElementById("folderSuggest");
+      (data.subdirs || []).forEach((item) => {
+        if ([...box.querySelectorAll(".chip")].some((el) => el.dataset.path === item.path)) return;
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.dataset.path = item.path;
+        chip.textContent = item.name;
+        chip.onclick = () => {
+          document.getElementById("folderInput").value = item.path;
+          scanFolder();
+        };
+        box.appendChild(chip);
+      });
+    }
+    document.getElementById("scanBtn").onclick = scanFolder;
+
+    document.getElementById("batchStart").onclick = async () => {
+      if (vocabDirty && !confirm("词表还没保存，仍用磁盘上的旧词表开始吗？")) return;
+      const box = document.getElementById("batchLog");
+      box.dataset.local = "1";
+      box.classList.remove("empty");
+      box.classList.add("live");
+      box.textContent = "正在启动批次…";
+      document.getElementById("logLive").classList.add("on");
+      const res = await fetch("/api/batch/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(batchBody()),
+      });
+      delete box.dataset.local;
+      if (!res.ok) {
+        document.getElementById("batchHint").textContent = await readError(res);
+        box.classList.remove("live");
+        document.getElementById("logLive").classList.remove("on");
+        return;
+      }
+      document.getElementById("batchHint").textContent = "批次已开始。不要休眠电脑，也不要同时聊天打标。";
+      renderBatch(await res.json());
+    };
+    document.getElementById("batchStop").onclick = async () => {
+      const res = await fetch("/api/batch/stop", { method: "POST" });
+      renderBatch(await res.json());
+    };
+    function billfishBody(apply) {
+      return {
+        out: document.getElementById("outInput").value.trim(),
+        db: document.getElementById("dbInput").value.trim(),
+        apply: !!apply,
+        strip_old: document.getElementById("stripOldInput").checked,
+        create_missing: document.getElementById("createMissingInput").checked,
+        replace: document.getElementById("replaceInput").checked,
+      };
+    }
+
+    function showBillfishResult(data, errText) {
+      const box = document.getElementById("billfishLog");
+      const hint = document.getElementById("billfishHint");
+      if (errText) {
+        hint.textContent = errText;
+        box.classList.remove("empty");
+        box.textContent = errText;
+        return;
+      }
+      const lines = [];
+      if (data.n_rows != null) lines.push(`结果 ${data.n_rows} 张，其中有标签 ${data.n_tagged}`);
+      if (data.matched != null) lines.push(`匹配 ${data.matched}  未匹配 ${data.missed}  重名 ${data.multi}`);
+      if (data.csv) lines.push("CSV " + data.csv);
+      if (data.backup) lines.push("备份 " + data.backup);
+      if (data.new_links != null) lines.push("新写入关联 " + data.new_links);
+      if (data.missing_names && data.missing_names.length) lines.push("缺失标签：" + data.missing_names.join("、"));
+      (data.log || []).forEach((l) => lines.push(l));
+      (data.preview || []).slice(0, 30).forEach((l) => lines.push(l));
+      if (data.preview_more) lines.push("... 另有 " + data.preview_more + " 行");
+      box.classList.remove("empty");
+      box.textContent = lines.join("\n") || "没有输出";
+      hint.textContent = data.apply ? "已写入。重新打开 Billfish 查看。" : "预览完成，确认匹配数量后再点「写入库」。";
+    }
+
+    document.getElementById("exportCsv").onclick = async () => {
+      const res = await fetch("/api/export/csv", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(batchBody()),
+      });
+      if (!res.ok) {
+        showBillfishResult(null, await readError(res));
+        return;
+      }
+      const data = await res.json();
+      showBillfishResult({ log: [`已导出 ${data.n} 条`], csv: data.csv, n_rows: data.n, n_tagged: data.n });
+    };
+
+    async function runBillfish(apply) {
+      if (apply && !confirm("将写入 Billfish 数据库。请确认已经退出 Billfish。继续？")) return;
+      const res = await fetch(apply ? "/api/billfish/apply" : "/api/billfish/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(billfishBody(apply)),
+      });
+      if (!res.ok) {
+        showBillfishResult(null, await readError(res));
+        return;
+      }
+      showBillfishResult(await res.json());
+    }
+    document.getElementById("billfishPreview").onclick = () => runBillfish(false);
+    document.getElementById("billfishApply").onclick = () => runBillfish(true);
+
+    async function loadDbSuggest() {
+      const folder = document.getElementById("folderInput").value.trim();
+      const res = await fetch("/api/billfish/suggest?folder=" + encodeURIComponent(folder));
+      const data = await res.json();
+      const box = document.getElementById("dbSuggest");
+      box.innerHTML = "";
+      (data.items || []).forEach((item) => {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.textContent = item.label;
+        chip.title = item.path;
+        chip.onclick = () => {
+          document.getElementById("dbInput").value = item.path;
+        };
+        box.appendChild(chip);
+      });
+      if (!(data.items || []).length) {
+        document.getElementById("billfishHint").textContent = "没找到 .bf/billfish.db，请手动填写路径。";
+      }
+    }
+    document.getElementById("dbSuggestBtn").onclick = loadDbSuggest;
+
+    function renderVocab() {
+      const root = document.getElementById("vocabEditor");
+      root.innerHTML = "";
+      groups.forEach((g, gi) => root.appendChild(renderGroup(g, gi, false)));
+      document.getElementById("vocabMeta").textContent = `（${countLeaves()} 个叶子标签）`;
+    }
+
+    function countLeaves() {
+      let n = 0;
+      for (const g of groups) {
+        n += (g.tags || []).length;
+        for (const c of g.children || []) n += (c.tags || []).length;
+      }
+      return n;
+    }
+
+    function renderGroup(g, gi, child) {
+      const wrap = document.createElement("div");
+      wrap.className = child ? "child" : "group";
+      const head = document.createElement("div");
+      head.className = "group-h";
+      const name = document.createElement("input");
+      name.type = "text";
+      name.value = g.name || "";
+      name.onchange = () => { g.name = name.value; vocabDirty = true; };
+      const addChildBtn = document.createElement("button");
+      addChildBtn.className = "btn ghost";
+      addChildBtn.type = "button";
+      addChildBtn.textContent = child ? " " : "添加子分类";
+      if (child) addChildBtn.style.visibility = "hidden";
+      addChildBtn.onclick = () => {
+        g.children = g.children || [];
+        g.children.push({ name: "新子分类", tags: [] });
+        vocabDirty = true;
+        renderVocab();
+      };
+      const del = document.createElement("button");
+      del.className = "btn danger";
+      del.type = "button";
+      del.textContent = "删除";
+      del.onclick = () => {
+        if (child) return;
+        groups.splice(gi, 1);
+        vocabDirty = true;
+        renderVocab();
+      };
+      if (child) {
+        del.onclick = () => {
+          const parent = groups.find((x) => (x.children || []).includes(g));
+          if (!parent) return;
+          parent.children = parent.children.filter((x) => x !== g);
+          vocabDirty = true;
+          renderVocab();
+        };
+      }
+      head.append(name, addChildBtn, del);
+      wrap.appendChild(head);
+      wrap.appendChild(renderChips(g));
+      wrap.appendChild(renderAdd(g));
+      (g.children || []).forEach((c) => wrap.appendChild(renderGroup(c, gi, true)));
+      return wrap;
+    }
+
+    function renderChips(g) {
+      const box = document.createElement("div");
+      box.className = "chips";
+      (g.tags || []).forEach((tag, i) => {
+        const el = document.createElement("span");
+        el.className = "tag";
+        el.appendChild(document.createTextNode(tag));
+        const x = document.createElement("button");
+        x.type = "button";
+        x.textContent = "×";
+        x.onclick = () => {
+          g.tags.splice(i, 1);
+          vocabDirty = true;
+          renderVocab();
+        };
+        el.appendChild(x);
+        box.appendChild(el);
+      });
+      if (!(g.tags || []).length) {
+        const empty = document.createElement("span");
+        empty.className = "hint";
+        empty.textContent = "还没有叶子标签";
+        box.appendChild(empty);
+      }
+      return box;
+    }
+
+    function renderAdd(g) {
+      const row = document.createElement("div");
+      row.className = "add-row";
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.placeholder = "新标签，回车添加";
+      const btn = document.createElement("button");
+      btn.className = "btn ghost";
+      btn.type = "button";
+      btn.textContent = "添加";
+      const add = () => {
+        const t = inp.value.trim();
+        if (!t) return;
+        g.tags = g.tags || [];
+        if (g.tags.includes(t)) return;
+        g.tags.push(t);
+        inp.value = "";
+        vocabDirty = true;
+        renderVocab();
+      };
+      btn.onclick = add;
+      inp.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); add(); }
+      });
+      row.append(inp, btn);
+      return row;
+    }
+
+    document.getElementById("addGroup").onclick = () => {
+      groups.push({ name: "新分类", tags: [] });
+      vocabDirty = true;
+      renderVocab();
+    };
+    document.getElementById("saveVocab").onclick = async () => {
+      const res = await fetch("/api/vocab", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ groups }),
+      });
+      const hint = document.getElementById("vocabHint");
+      if (!res.ok) {
+        hint.textContent = await readError(res);
+        return;
+      }
+      const data = await res.json();
+      groups = data.groups;
+      vocabDirty = false;
+      renderVocab();
+      hint.textContent = "已保存，之后的单张/批量打标都会用这套词表。";
+    };
+    document.getElementById("resetVocab").onclick = async () => {
+      if (!confirm("恢复成 Billfish 默认词表？未保存的修改会丢掉。")) return;
+      const res = await fetch("/api/vocab/reset", { method: "POST" });
+      const data = await res.json();
+      groups = data.groups;
+      vocabDirty = false;
+      renderVocab();
+      document.getElementById("vocabHint").textContent = "已恢复默认词表。";
+    };
+
+    async function bootBatch() {
+      const [settings, vocab, suggest] = await Promise.all([
+        fetch("/api/settings").then((r) => r.json()),
+        fetch("/api/vocab").then((r) => r.json()),
+        fetch("/api/folders/suggest").then((r) => r.json()),
+      ]);
+      document.getElementById("folderInput").value = settings.folder || "";
+      document.getElementById("outInput").value = settings.out || "";
+      document.getElementById("resumeInput").checked = settings.resume !== false;
+      document.getElementById("limitInput").value = settings.limit || 0;
+      document.getElementById("dbInput").value = settings.billfish_db || "";
+      groups = vocab.groups || [];
+      renderVocab();
+      const box = document.getElementById("folderSuggest");
+      box.innerHTML = "";
+      (suggest.items || []).forEach((item) => {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.dataset.path = item.path;
+        chip.textContent = item.label;
+        chip.title = item.path;
+        chip.onclick = () => {
+          document.getElementById("folderInput").value = item.path;
+          scanFolder();
+        };
+        box.appendChild(chip);
+      });
+      loadDbSuggest().catch(() => {});
+    }
+    bootBatch().catch((err) => {
+      document.getElementById("scanHint").textContent = "加载配置失败：" + err;
+    });
+  </script>
+</body>
+</html>

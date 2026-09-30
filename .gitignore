@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+outputs/
+config/settings.json
+config/vocab.json
+*.db
+*.db.bak-*
+.bf/
+AI自动打标素材库/
+smoke3/
+.idea/
+.vscode/
+*.egg-info/
+.pytest_cache/
+hf_cache/
