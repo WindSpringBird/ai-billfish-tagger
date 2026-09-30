@@ -97,6 +97,10 @@ python import_billfish.py --jsonl results.jsonl --db "D:\图库\.bf\billfish.db"
 - 不要把 `outputs/`、`config/settings.json`、原图库提交到 Git。
 - 本工具直接改 SQLite，不是官方导入接口；升级 Billfish 后若表结构变了，先 `--apply` 前看预览，必要时再备份。
 
+## 维护者
+
+- [WindSpringBird](https://github.com/WindSpringBird)
+
 ## 许可
 
 按你自己的仓库许可发布。模型权重遵循其 Hugging Face 页面的许可证。
